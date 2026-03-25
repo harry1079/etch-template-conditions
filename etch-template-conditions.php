@@ -881,7 +881,7 @@ class Etch_TC_Admin {
 
                         if ( $has_db ) {
                             $status_class = ( $db_post->post_status === 'publish' ) ? 'status-publish' : 'status-draft';
-                            $status_text  = ucfirst( $db_post->post_status );
+                            $status_text  = ( $db_post->post_status === 'publish' ) ? 'Published' : 'Draft';
                         } elseif ( $has_theme || $has_plugin ) {
                             $status_class = 'status-file';
                             $status_text  = 'File only';
@@ -959,7 +959,7 @@ class Etch_TC_Admin {
 
                         if ( $has_db ) {
                             $status_class = ( $db_post->post_status === 'publish' ) ? 'status-publish' : 'status-draft';
-                            $status_text  = ucfirst( $db_post->post_status );
+                            $status_text  = ( $db_post->post_status === 'publish' ) ? 'Published' : 'Draft';
                         } elseif ( $has_theme || $has_plugin ) {
                             $status_class = 'status-file';
                             $status_text  = 'File only';
@@ -1747,7 +1747,7 @@ class Etch_TC_Admin {
                 }).done(function(resp) {
                     if (resp.success) {
                         var s = resp.data.new_status;
-                        var label = s.charAt(0).toUpperCase() + s.slice(1);
+                        var label = (s === 'publish') ? 'Published' : 'Draft';
                         $el.text(label)
                            .removeClass('status-publish status-draft')
                            .addClass(s === 'publish' ? 'status-publish' : 'status-draft')
