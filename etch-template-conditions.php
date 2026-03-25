@@ -1140,7 +1140,7 @@ class Etch_TC_Admin {
                     <div class="etch-tc-help-card">
                         <h3>Managing Templates in the Table</h3>
                         <p><strong>Rename:</strong> Click any template name in the All Templates or Created in Etch tabs to give it a descriptive label. This is purely visual — it does not affect the slug or template matching.</p>
-                        <p><strong>Status:</strong> Click the <strong>Publish</strong> or <strong>Draft</strong> status label to toggle a template between published and draft. Draft templates will not be used on the frontend, so this is a quick way to disable a template without deleting it.</p>
+                        <p><strong>Status:</strong> Click the <strong>Published</strong> or <strong>Draft</strong> status label to toggle a template between published and draft. Draft templates will not be used on the frontend, so this is a quick way to disable a template without deleting it.</p>
                     </div>
 
                     <div class="etch-tc-help-card">
