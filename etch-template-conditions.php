@@ -1,12 +1,12 @@
 <?php
 /**
  * Plugin Name: Etch Template Conditions
- * Plugin URI:  https://github.com/your-repo/etch-template-conditions
+ * Plugin URI:  https://github.com/harry1079/etch-template-conditions
  * Description: Enables taxonomy-based template conditions for single posts in FSE/EtchWP.
  *              Allows different single templates per taxonomy term (e.g., single-holiday
  *              can resolve to single-holiday-rule-1, single-holiday-eu-event, etc.)
  *              Rules are managed via the admin UI or programmatically via the etch_tc_rules filter.
- * Version:     0.2.0
+ * Version:     0.2.6
  * Author:      BMB Holidays
  * License:     GPL-2.0-or-later
  * Requires at least: 6.4
@@ -151,6 +151,10 @@ class Etch_Template_Conditions {
 
     private $matched_rule = null;
 
+    // Re-entrancy guard: prevents infinite recursion if get_block_template()
+    // internally re-triggers the get_block_templates filter.
+    private $swapping = false;
+
     public function __construct() {
         add_filter( 'get_block_templates', array( $this, 'swap_block_template' ), 20, 3 );
         add_filter( 'single_template_hierarchy', array( $this, 'add_to_hierarchy' ) );
@@ -211,6 +215,10 @@ class Etch_Template_Conditions {
             return $query_result;
         }
 
+        if ( $this->swapping ) {
+            return $query_result;
+        }
+
         $rule = $this->get_matched_rule();
         if ( ! $rule ) {
             return $query_result;
@@ -256,7 +264,7 @@ class Etch_Template_Conditions {
         $wp_query_args = array(
             'post_name__in'  => array( $slug ),
             'post_type'      => 'wp_template',
-            'post_status'    => array( 'publish', 'auto-draft' ),
+            'post_status'    => array( 'publish' ),
             'posts_per_page' => 1,
             'no_found_rows'  => true,
             'tax_query'      => array(
@@ -271,8 +279,16 @@ class Etch_Template_Conditions {
         $template_query = new WP_Query( $wp_query_args );
 
         if ( ! empty( $template_query->posts ) ) {
-            $post = $template_query->posts[0];
-            return _build_block_template_result_from_post( $post );
+            // Build the block template via the public API rather than the
+            // private _build_block_template_result_from_post(). The guard
+            // protects against get_block_template() re-entering our filter.
+            $this->swapping = true;
+            $template = get_block_template( $theme . '//' . $slug, 'wp_template' );
+            $this->swapping = false;
+
+            if ( $template instanceof WP_Block_Template ) {
+                return $template;
+            }
         }
 
         return false;
@@ -394,6 +410,7 @@ class Etch_TC_Admin {
         add_action( 'wp_ajax_etch_tc_toggle_etch_flag', array( $this, 'ajax_toggle_etch_flag' ) );
         add_action( 'wp_ajax_etch_tc_save_template_name', array( $this, 'ajax_save_template_name' ) );
         add_action( 'wp_ajax_etch_tc_toggle_status', array( $this, 'ajax_toggle_status' ) );
+        add_action( 'wp_ajax_etch_tc_delete_template', array( $this, 'ajax_delete_template' ) );
     }
 
     public function add_menu_page() {
@@ -633,6 +650,30 @@ class Etch_TC_Admin {
         wp_send_json_success( array( 'new_status' => $new_status ) );
     }
 
+    public function ajax_delete_template() {
+        check_ajax_referer( 'etch_tc_nonce', 'nonce' );
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( 'Unauthorized' );
+        }
+
+        $post_id = isset( $_POST['post_id'] ) ? absint( $_POST['post_id'] ) : 0;
+        if ( ! $post_id ) {
+            wp_send_json_error( 'Missing template ID' );
+        }
+
+        // Guard: only ever delete wp_template posts, never anything else.
+        if ( 'wp_template' !== get_post_type( $post_id ) ) {
+            wp_send_json_error( 'Not a template' );
+        }
+
+        $deleted = wp_delete_post( $post_id, true );
+        if ( ! $deleted ) {
+            wp_send_json_error( 'Delete failed' );
+        }
+
+        wp_send_json_success();
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────
 
     private function get_theme() {
@@ -703,6 +744,15 @@ class Etch_TC_Admin {
             $type,
             urlencode( $theme_slug . '//' . $slug )
         ) );
+    }
+
+    /**
+     * Direct "magic" edit URL for the Etch editor, targeting a specific
+     * wp_template post by ID. Bypasses the Site Editor round-trip and works
+     * for imported/hidden templates that Etch's Template Manager doesn't list.
+     */
+    private function get_etch_edit_url( $post_id ) {
+        return home_url( '/?etch=magic&post_id=' . (int) $post_id );
     }
 
     private function get_post_edit_url( $post_id ) {
@@ -890,7 +940,7 @@ class Etch_TC_Admin {
                             $status_text  = 'Missing';
                         }
 
-                        $modified = $has_db ? date( 'j M Y, H:i', strtotime( $db_post->post_modified ) ) : '—';
+                        $modified = $has_db ? wp_date( 'j M Y, H:i', strtotime( $db_post->post_modified ) ) : '—';
                         $custom_name = $template_names[ $slug ] ?? '';
                         $title = $custom_name !== '' ? $custom_name : ( $has_db && ! empty( $db_post->post_title ) ? $db_post->post_title : ucfirst( str_replace( array( '-', '_', '--' ), ' ', $slug ) ) );
                         $row_classes = array();
@@ -899,7 +949,7 @@ class Etch_TC_Admin {
                         <tr class="<?php echo esc_attr( implode( ' ', $row_classes ) ); ?>">
                             <td>
                                 <strong class="etch-tc-template-name etch-tc-editable-name" data-slug="<?php echo esc_attr( $slug ); ?>" title="Click to edit name"><?php echo esc_html( $title ); ?></strong>
-                                <br><code class="etch-tc-slug"><?php echo esc_html( $slug ); ?></code>
+                                <br><code class="etch-tc-slug"><?php echo esc_html( $slug ); ?></code><?php if ( $has_db ) : ?> <span class="etch-tc-post-id" title="wp_template post ID — matches post_id in the Etch editor URL">#<?php echo (int) $db_post->ID; ?></span><?php endif; ?>
                                 <?php if ( $is_rule ) : ?>
                                     <br><small class="etch-tc-rule-info">
                                         &rarr; <?php echo esc_html( $this->describe_rule_inline( $rule_map[ $slug ] ) ); ?>
@@ -968,14 +1018,14 @@ class Etch_TC_Admin {
                             $status_text  = 'Missing';
                         }
 
-                        $modified = $has_db ? date( 'j M Y, H:i', strtotime( $db_post->post_modified ) ) : '—';
+                        $modified = $has_db ? wp_date( 'j M Y, H:i', strtotime( $db_post->post_modified ) ) : '—';
                         $custom_name = $template_names[ $slug ] ?? '';
                         $title = $custom_name !== '' ? $custom_name : ( $has_db && ! empty( $db_post->post_title ) ? $db_post->post_title : ucfirst( str_replace( array( '-', '_', '--' ), ' ', $slug ) ) );
                     ?>
                         <tr>
                             <td>
                                 <strong class="etch-tc-template-name etch-tc-editable-name" data-slug="<?php echo esc_attr( $slug ); ?>" title="Click to edit name"><?php echo esc_html( $title ); ?></strong>
-                                <br><code class="etch-tc-slug"><?php echo esc_html( $slug ); ?></code>
+                                <br><code class="etch-tc-slug"><?php echo esc_html( $slug ); ?></code><?php if ( $has_db ) : ?> <span class="etch-tc-post-id" title="wp_template post ID — matches post_id in the Etch editor URL">#<?php echo (int) $db_post->ID; ?></span><?php endif; ?>
                             </td>
                             <td style="text-align: center;"><span class="etch-tc-badge <?php echo esc_attr( $this->get_type_badge_class( $type ) ); ?>"><?php echo esc_html( $this->get_type_label( $type ) ); ?></span></td>
                             <td><span class="etch-tc-status <?php echo esc_attr( $status_class ); ?><?php echo $has_db ? ' etch-tc-status-toggle' : ''; ?>" <?php echo $has_db ? 'data-slug="' . esc_attr( $slug ) . '" title="Click to toggle status"' : ''; ?>><?php echo esc_html( $status_text ); ?></span></td>
@@ -1767,6 +1817,37 @@ class Etch_TC_Admin {
                 }
             });
 
+            // ── Delete template ──
+            $(document).on('click', '.etch-tc-delete-template', function() {
+                var $btn = $(this);
+                var id = $btn.data('id');
+                var slug = $btn.data('slug');
+                if (!confirm('Permanently delete the template "' + slug + '" (ID ' + id + ') from the database?\n\nThis cannot be undone. Make sure this is an orphaned duplicate — not the template you are actually using.')) return;
+                $btn.prop('disabled', true).text('Deleting...');
+                $.post(etchTC.ajaxUrl, {
+                    action: 'etch_tc_delete_template',
+                    nonce: etchTC.nonce,
+                    post_id: id
+                }).done(function(resp) {
+                    if (resp.success) {
+                        $btn.closest('tr').fadeOut(200, function() { $(this).remove(); });
+                    } else {
+                        $btn.prop('disabled', false).text('Delete');
+                        alert('Error: ' + (resp.data || 'Delete failed'));
+                    }
+                }).fail(function() {
+                    $btn.prop('disabled', false).text('Delete');
+                    handleAjaxError.apply(this, arguments);
+                });
+            });
+
+            // ── Flag the row in danger red while hovering its Delete button ──
+            $(document).on('mouseenter', '.etch-tc-delete-template', function() {
+                $(this).closest('tr').addClass('etch-tc-row-danger');
+            }).on('mouseleave', '.etch-tc-delete-template', function() {
+                $(this).closest('tr').removeClass('etch-tc-row-danger');
+            });
+
             // ── Init ──
             renderRulesTable();
 
@@ -1783,11 +1864,22 @@ class Etch_TC_Admin {
         $has_db  = ! empty( $db_post );
 
         if ( $has_db ) {
-            // Primary: Site Editor (required for wp_template posts).
+            // Primary: open straight in the Etch editor by post ID.
+            $etch_url = $this->get_etch_edit_url( $db_post->ID );
+            $buttons .= sprintf(
+                '<a href="%s" target="_blank" rel="noopener" class="button button-primary etch-tc-btn" title="Open this template directly in the Etch editor (new tab)">Edit in Etch</a> ',
+                esc_url( $etch_url )
+            );
+            // Secondary: WordPress Site Editor.
             $se_url = $this->get_site_editor_url( $slug, $post_type );
             $buttons .= sprintf(
-                '<a href="%s" class="button button-primary etch-tc-btn" title="Opens the Site Editor — click Edit in Etch from there">Site Editor</a> ',
+                '<a href="%s" class="button etch-tc-btn" title="Opens the WordPress Site Editor">Site Editor</a> ',
                 esc_url( $se_url )
+            );
+            $buttons .= sprintf(
+                '<button class="button etch-tc-btn etch-tc-delete-template" data-id="%d" data-slug="%s" title="Permanently delete this template from the database">Delete</button> ',
+                (int) $db_post->ID,
+                esc_attr( $slug )
             );
         } else {
             $se_url = admin_url( 'site-editor.php?postType=' . $post_type );
@@ -1862,8 +1954,17 @@ class Etch_TC_Admin {
         .etch-tc-table td { vertical-align: middle; }
         .etch-tc-template-name { font-size: 13px; }
         .etch-tc-slug { font-size: 11px; color: #787c82; }
+        .etch-tc-post-id { font-size: 11px; color: #a7aaad; font-family: monospace; cursor: help; }
         .etch-tc-rule-info { color: #2271b1; }
         .etch-tc-row-rule { background: #f0f6fc !important; }
+
+        /* Make the hovered row obvious so button clicks land on the right one. */
+        .etch-tc-table tbody tr:hover { background-color: #eaf3fb !important; }
+        /* When hovering a Delete button, flag the whole row in danger red. */
+        .etch-tc-table tbody tr.etch-tc-row-danger,
+        .etch-tc-table tbody tr.etch-tc-row-danger:hover {
+            background-color: #fcefef !important; box-shadow: inset 4px 0 0 #d63638;
+        }
         .etch-tc-etch-flag { display: block; margin: 0 auto; }
         .etch-tc-editable-name { cursor: pointer; border-bottom: 1px dashed #c3c4c7; }
         .etch-tc-editable-name:hover { border-bottom-color: #2271b1; color: #2271b1; }
@@ -1950,8 +2051,10 @@ class Etch_TC_Admin {
 
         /* Rule action buttons */
         .etch-tc-rule-edit { }
-        .etch-tc-rule-delete { color: #d63638 !important; border-color: #d63638 !important; }
-        .etch-tc-rule-delete:hover { background: #d63638 !important; color: #fff !important; }
+        .etch-tc-rule-delete,
+        .etch-tc-delete-template { color: #d63638 !important; border-color: #d63638 !important; }
+        .etch-tc-rule-delete:hover,
+        .etch-tc-delete-template:hover { background: #d63638 !important; color: #fff !important; }
 
         /* Filter rules section */
         .etch-tc-filter-rules-section {
