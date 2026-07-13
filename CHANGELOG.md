@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.7] - 2026-07-13
+
+### Added
+- Template slugs in the dashboard tables are now click-to-copy, with a "Copied!"
+  confirmation.
+- Helper text under the rule form's Template Slug field: "Or paste an existing
+  template slug to apply this rule to that template." (shown for new rules only,
+  since the slug is locked when editing).
+
 ## [0.2.6] - 2026-07-13
 
 ### Added
@@ -67,6 +76,7 @@ All notable changes to this project are documented here. The format is based on
   drag-and-drop ordering, inline rename, and inline publish/draft toggling.
 - Programmatic rules via the `etch_tc_rules` filter.
 
+[0.2.7]: https://github.com/harry1079/etch-template-conditions/releases/tag/v0.2.7
 [0.2.6]: https://github.com/harry1079/etch-template-conditions/releases/tag/v0.2.6
 [0.2.5]: https://github.com/harry1079/etch-template-conditions/releases/tag/v0.2.5
 [0.2.4]: https://github.com/harry1079/etch-template-conditions/releases/tag/v0.2.4

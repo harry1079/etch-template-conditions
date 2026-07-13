@@ -6,7 +6,7 @@
  *              Allows different single templates per taxonomy term (e.g., single-holiday
  *              can resolve to single-holiday-rule-1, single-holiday-eu-event, etc.)
  *              Rules are managed via the admin UI or programmatically via the etch_tc_rules filter.
- * Version:     0.2.6
+ * Version:     0.2.7
  * Author:      BMB Holidays
  * License:     GPL-2.0-or-later
  * Requires at least: 6.4
@@ -949,7 +949,7 @@ class Etch_TC_Admin {
                         <tr class="<?php echo esc_attr( implode( ' ', $row_classes ) ); ?>">
                             <td>
                                 <strong class="etch-tc-template-name etch-tc-editable-name" data-slug="<?php echo esc_attr( $slug ); ?>" title="Click to edit name"><?php echo esc_html( $title ); ?></strong>
-                                <br><code class="etch-tc-slug"><?php echo esc_html( $slug ); ?></code><?php if ( $has_db ) : ?> <span class="etch-tc-post-id" title="wp_template post ID — matches post_id in the Etch editor URL">#<?php echo (int) $db_post->ID; ?></span><?php endif; ?>
+                                <br><code class="etch-tc-slug" title="Click to copy slug"><?php echo esc_html( $slug ); ?></code><?php if ( $has_db ) : ?> <span class="etch-tc-post-id" title="wp_template post ID — matches post_id in the Etch editor URL">#<?php echo (int) $db_post->ID; ?></span><?php endif; ?>
                                 <?php if ( $is_rule ) : ?>
                                     <br><small class="etch-tc-rule-info">
                                         &rarr; <?php echo esc_html( $this->describe_rule_inline( $rule_map[ $slug ] ) ); ?>
@@ -1025,7 +1025,7 @@ class Etch_TC_Admin {
                         <tr>
                             <td>
                                 <strong class="etch-tc-template-name etch-tc-editable-name" data-slug="<?php echo esc_attr( $slug ); ?>" title="Click to edit name"><?php echo esc_html( $title ); ?></strong>
-                                <br><code class="etch-tc-slug"><?php echo esc_html( $slug ); ?></code><?php if ( $has_db ) : ?> <span class="etch-tc-post-id" title="wp_template post ID — matches post_id in the Etch editor URL">#<?php echo (int) $db_post->ID; ?></span><?php endif; ?>
+                                <br><code class="etch-tc-slug" title="Click to copy slug"><?php echo esc_html( $slug ); ?></code><?php if ( $has_db ) : ?> <span class="etch-tc-post-id" title="wp_template post ID — matches post_id in the Etch editor URL">#<?php echo (int) $db_post->ID; ?></span><?php endif; ?>
                             </td>
                             <td style="text-align: center;"><span class="etch-tc-badge <?php echo esc_attr( $this->get_type_badge_class( $type ) ); ?>"><?php echo esc_html( $this->get_type_label( $type ) ); ?></span></td>
                             <td><span class="etch-tc-status <?php echo esc_attr( $status_class ); ?><?php echo $has_db ? ' etch-tc-status-toggle' : ''; ?>" <?php echo $has_db ? 'data-slug="' . esc_attr( $slug ) . '" title="Click to toggle status"' : ''; ?>><?php echo esc_html( $status_text ); ?></span></td>
@@ -1086,6 +1086,7 @@ class Etch_TC_Admin {
                         <label for="etch-tc-template-slug">Template Slug</label>
                         <input type="text" id="etch-tc-template-slug" placeholder="Auto-generated, e.g. single-uk-venues-rule-1">
                         <p class="description" id="etch-tc-slug-suggestion"></p>
+                        <p class="description" id="etch-tc-slug-manual-hint">Or paste an existing template slug to apply this rule to that template.</p>
                     </div>
 
                     <div class="etch-tc-form-actions">
@@ -1406,6 +1407,7 @@ class Etch_TC_Admin {
                     $('#etch-tc-match-mode').val(rule.match || 'any');
                     $('#etch-tc-template-slug').val(rule.template).prop('readonly', true);
                     $('#etch-tc-slug-suggestion').html('<small style="color:#787c82;">Template slug is locked after creation to preserve the link to the template.</small>');
+                    $('#etch-tc-slug-manual-hint').hide();
 
                     // Load taxonomies for this post type, then populate conditions.
                     loadTaxonomies(rule.post_type, function() {
@@ -1419,6 +1421,7 @@ class Etch_TC_Admin {
                     $('#etch-tc-form-title').text('Add New Rule');
                     $('#etch-tc-editing-id').val('');
                     $('#etch-tc-template-slug').prop('readonly', false);
+                    $('#etch-tc-slug-manual-hint').show();
                 }
 
                 $form.slideDown(200);
@@ -1441,6 +1444,7 @@ class Etch_TC_Admin {
                 $('#etch-tc-match-row').hide();
                 $('#etch-tc-template-slug').val('').prop('readonly', false);
                 $('#etch-tc-slug-suggestion').text('');
+                $('#etch-tc-slug-manual-hint').show();
             }
 
             // ── Taxonomy/Term AJAX ──
@@ -1817,6 +1821,21 @@ class Etch_TC_Admin {
                 }
             });
 
+            // ── Click a table slug to copy it ──
+            $(document).on('click', '.etch-tc-slug', function() {
+                var $el  = $(this);
+                var slug = $el.text().trim();
+                if (navigator.clipboard) {
+                    navigator.clipboard.writeText(slug);
+                }
+                if ($el.next('.etch-tc-copied-flag').length) return;
+                var $flag = $('<span class="etch-tc-copied-flag">Copied!</span>');
+                $el.after($flag);
+                setTimeout(function() {
+                    $flag.fadeOut(200, function() { $(this).remove(); });
+                }, 900);
+            });
+
             // ── Delete template ──
             $(document).on('click', '.etch-tc-delete-template', function() {
                 var $btn = $(this);
@@ -1953,7 +1972,9 @@ class Etch_TC_Admin {
         .etch-tc-table th { font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; color: #50575e; vertical-align: middle; }
         .etch-tc-table td { vertical-align: middle; }
         .etch-tc-template-name { font-size: 13px; }
-        .etch-tc-slug { font-size: 11px; color: #787c82; }
+        .etch-tc-slug { font-size: 11px; color: #787c82; cursor: pointer; }
+        .etch-tc-slug:hover { color: #2271b1; text-decoration: underline; }
+        .etch-tc-copied-flag { font-size: 11px; color: #00a32a; font-weight: 600; margin-left: 6px; }
         .etch-tc-post-id { font-size: 11px; color: #a7aaad; font-family: monospace; cursor: help; }
         .etch-tc-rule-info { color: #2271b1; }
         .etch-tc-row-rule { background: #f0f6fc !important; }
